@@ -1,0 +1,74 @@
+import sys
+import subprocess
+
+try:
+    import nmap
+except ImportError:
+    print("[-] 'python-nmap' is missing. Install it using:")
+    print("    sudo apt install python3-nmap  OR  pip3 install python-nmap --break-system-packages")
+    sys.exit(1)
+
+def scan_and_map_network(target_subnet, local_ip):
+    nm = nmap.PortScanner()
+    
+    print("=" * 60)
+    print(f"[*] Starting Full Network Map for Subnet: {target_subnet}")
+    print(f"[*] Local Host IP: {local_ip}")
+    print("=" * 60 + "\n")
+    
+    # -sn: Ping scan for host discovery
+    # -PE/PP/PM: ICMP echo, timestamp, and netmask request
+    # -PR: ARP ping (fastest and most accurate for local LANs)
+    print("[+] Phase 1: Discovering live hosts...")
+    nm.scan(hosts=target_subnet, arguments='-sn -PR')
+    
+    live_hosts = nm.all_hosts()
+    
+    if not live_hosts:
+        print("[-] No active hosts found on the network.")
+        return
+    
+    print(f"[+] Found {len(live_hosts)} active host(s).\n")
+    print("[+] Phase 2: Scanning common ports & services on active hosts...")
+    print("-" * 60)
+
+    # Scan top 100 common ports on all discovered hosts
+    for host in live_hosts:
+        is_self = "(This Machine)" if host == local_ip else ""
+        
+        # Extract MAC and vendor details
+        mac = nm[host]['addresses'].get('mac', 'N/A')
+        vendor_dict = nm[host].get('vendor', {})
+        vendor = vendor_dict.get(mac, 'Unknown / Not Detected') if mac != 'N/A' else 'N/A'
+        
+        hostname = nm[host].hostname() or 'Unknown Hostname'
+        state = nm[host].state()
+
+        print(f"\n[>] Host: {host} {is_self}")
+        print(f"    Status   : {state}")
+        print(f"    Hostname : {hostname}")
+        print(f"    MAC Addr : {mac}")
+        print(f"    Vendor   : {vendor}")
+
+        # Deep scan ports for this host
+        port_scanner = nmap.PortScanner()
+        port_scanner.scan(host, arguments='-sS -F') # Fast scan top 100 ports
+        
+        if host in port_scanner.all_hosts() and 'tcp' in port_scanner[host]:
+            open_ports = port_scanner[host]['tcp']
+            print("    Open Ports & Services:")
+            for port, details in open_ports.items():
+                if details['state'] == 'open':
+                    service = details.get('name', 'unknown')
+                    print(f"      - Port {port}/tcp : {service}")
+        else:
+            print("    Open Ports & Services: None detected or filtered")
+            
+        print("-" * 60)
+
+if __name__ == '__main__':
+    # Configuration tailored to eth1
+    HOST_IP = "192.168.43.5"
+    TARGET_SUBNET = "192.168.43.0/24"
+    
+    scan_and_map_network(TARGET_SUBNET, HOST_IP)
